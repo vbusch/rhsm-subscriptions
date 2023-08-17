@@ -68,13 +68,13 @@ class OptInResourceTest {
   @Test
   void testGet() {
     resource.getOptInConfig();
-    Mockito.verify(controller).getOptInConfig("account123456", "owner123456");
+    Mockito.verify(controller).getOptInConfig("owner123456");
   }
 
   @Test
   void testPut() {
     resource.putOptInConfig();
-    Mockito.verify(controller).optIn("account123456", "owner123456", OptInType.API);
+    Mockito.verify(controller).optIn("owner123456", OptInType.API);
   }
 
   @Test
