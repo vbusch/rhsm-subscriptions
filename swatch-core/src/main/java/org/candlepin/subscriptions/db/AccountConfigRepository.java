@@ -20,15 +20,11 @@
  */
 package org.candlepin.subscriptions.db;
 
-import java.time.OffsetDateTime;
-import java.util.Optional;
 import java.util.stream.Stream;
 import org.candlepin.subscriptions.db.model.config.AccountConfig;
-import org.candlepin.subscriptions.db.model.config.OptInType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.util.StringUtils;
 
 /** Defines all operations for storing account config entries. */
 public interface AccountConfigRepository extends JpaRepository<AccountConfig, String> {
@@ -45,35 +41,5 @@ public interface AccountConfigRepository extends JpaRepository<AccountConfig, St
   @Query("select distinct c.accountNumber from AccountConfig c where c.orgId = :orgId")
   String findAccountNumberByOrgId(@Param("orgId") String orgId);
 
-  @Query(
-      "select count(c) from AccountConfig c "
-          + "where c.optInType='API' and c.created between :startOfWeek and :endOfWeek")
-  int getCountOfOptInsForDateRange(OffsetDateTime startOfWeek, OffsetDateTime endOfWeek);
-
-  Optional<AccountConfig> findByOrgId(String orgId);
-
-  boolean existsByOrgId(String orgId);
-
   boolean existsByAccountNumber(String accountNumber);
-
-  void deleteByOrgId(String accountNumber);
-
-  default Optional<AccountConfig> createOrUpdateAccountConfig(
-      String account, String orgId, OffsetDateTime current, OptInType optInType) {
-    Optional<AccountConfig> found = findByOrgId(orgId);
-    AccountConfig accountConfig = found.orElse(new AccountConfig());
-    if (!found.isPresent()) {
-      accountConfig.setOptInType(optInType);
-      accountConfig.setCreated(current);
-    }
-    accountConfig.setOrgId(orgId);
-    accountConfig.setUpdated(current);
-
-    // Only set the account number if it is known.
-    if (StringUtils.hasText(account)) {
-      accountConfig.setAccountNumber(account);
-    }
-
-    return Optional.of(save(accountConfig));
-  }
 }

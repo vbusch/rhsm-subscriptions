@@ -22,9 +22,6 @@ package org.candlepin.subscriptions.db;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -51,45 +48,6 @@ class AccountConfigRepositoryTest {
   @Autowired private ApplicationClock clock;
 
   @Test
-  void saveAndUpdate() {
-    OffsetDateTime creation = clock.now();
-    OffsetDateTime expectedUpdate = creation.plusDays(1);
-
-    String account = "test-account";
-    AccountConfig config = new AccountConfig();
-    config.setAccountNumber(account);
-    config.setOrgId("test-og");
-    config.setOptInType(OptInType.API);
-    config.setCreated(creation);
-    config.setUpdated(expectedUpdate);
-
-    repository.saveAndFlush(config);
-
-    AccountConfig found = repository.findByOrgId("test-og").orElseThrow();
-    assertEquals(config, found);
-
-    found.setOptInType(OptInType.API);
-    repository.saveAndFlush(found);
-
-    AccountConfig updated = repository.findByOrgId("test-og").orElseThrow();
-    assertNotNull(updated);
-    assertEquals(OptInType.API, updated.getOptInType());
-  }
-
-  @Test
-  void testDelete() {
-    AccountConfig config = createConfig("an-account", "an-org");
-    repository.saveAndFlush(config);
-
-    AccountConfig toDelete = repository.findByOrgId("an-org").orElseThrow();
-    assertNotNull(toDelete);
-    repository.delete(toDelete);
-    repository.flush();
-
-    assertEquals(0, repository.count());
-  }
-
-  @Test
   void testFindAccountsWithEnabledSync() {
     repository.saveAll(
         Arrays.asList(
@@ -103,33 +61,6 @@ class AccountConfigRepositoryTest {
         repository.findSyncEnabledAccounts().collect(Collectors.toList());
     assertEquals(4, accountsWithSync.size());
     assertTrue(accountsWithSync.containsAll(Arrays.asList("A1", "A2", "A3", "A4")));
-  }
-
-  @Test
-  void testOptInCount() {
-    OffsetDateTime begin = OffsetDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC).minusSeconds(1);
-    OffsetDateTime end = begin.plusDays(1);
-
-    AccountConfig optInBefore = createConfig("A1", "O1");
-    optInBefore.setCreated(begin.minusSeconds(1));
-
-    AccountConfig optInBeginning = createConfig("A2", "O2");
-    optInBeginning.setCreated(begin);
-
-    AccountConfig optInEnd = createConfig("A3", "O3");
-    optInEnd.setCreated(end);
-
-    AccountConfig optInAfter = createConfig("A4", "O4");
-    optInAfter.setCreated(end.plusSeconds(1));
-
-    repository.saveAll(Arrays.asList(optInBefore, optInBeginning, optInEnd, optInAfter));
-    repository.flush();
-
-    int count =
-        repository.getCountOfOptInsForDateRange(
-            OffsetDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC), OffsetDateTime.now());
-
-    assertEquals(2, count);
   }
 
   @Test
