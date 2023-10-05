@@ -22,8 +22,9 @@ package org.candlepin.subscriptions.conduit.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.util.AssertionErrors.assertFalse;
 import static org.springframework.test.util.AssertionErrors.assertTrue;
 
@@ -67,14 +68,6 @@ class InternalOrganizationSyncResourceTest {
   }
 
   @Test
-  void syncOrgShouldThrowInternalServerError() throws Exception {
-    doThrow(new MissingAccountNumberException()).when(controller).updateInventoryForOrg(any());
-    var request = new OrgSyncRequest();
-    request.setOrgId("123");
-    assertThrows(InternalServerErrorException.class, () -> resource.syncOrg(request));
-  }
-
-  @Test
   void syncAllOrgsShouldReturnSuccess() {
     assertEquals("Success", resource.syncFullOrgList().getStatus());
   }
@@ -104,7 +97,7 @@ class InternalOrganizationSyncResourceTest {
   }
 
   @Test
-  void getInventoryForOrg() throws MissingAccountNumberException {
+  void getInventoryForOrg() {
     String orgId = "123";
     Integer offset = 0;
     OrgInventory expected = new OrgInventory();
@@ -116,7 +109,7 @@ class InternalOrganizationSyncResourceTest {
   }
 
   @Test
-  void getInventoryForOrgThrowsInternalServerErrorException() throws MissingAccountNumberException {
+  void getInventoryForOrgThrowsInternalServerErrorException() {
     String orgId = "123";
     Integer offset = 0;
     when(controller.getInventoryForOrg(orgId, offset.toString()))
