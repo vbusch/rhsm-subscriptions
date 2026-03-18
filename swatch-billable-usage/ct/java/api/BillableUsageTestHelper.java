@@ -88,6 +88,24 @@ public final class BillableUsageTestHelper {
     return tallySummary;
   }
 
+  /**
+   * Create a tally summary with separate value and currentTotal. Use for retry scenarios where the
+   * incremental value differs from the cumulative total (e.g. value=20, currentTotal=120).
+   */
+  public static TallySummary createTallySummary(
+      String orgId,
+      String productId,
+      String metricId,
+      double value,
+      double currentTotal,
+      BillingProvider billingProvider,
+      String billingAccountId) {
+    TallySummary summary =
+        createTallySummary(orgId, productId, metricId, value, billingProvider, billingAccountId);
+    summary.getTallySnapshots().get(0).getTallyMeasurements().get(0).setCurrentTotal(currentTotal);
+    return summary;
+  }
+
   public static TallySummary createTallySummaryWithDefaults(
       String orgId, String productId, String metricId, double value) {
     return createTallySummary(

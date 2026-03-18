@@ -82,3 +82,6 @@ properties:
   currentTotal:
     description: Sum of all measurements between the start of the month to the snapshot date.
     type: number
+  metricIncrement:
+    description: The incremental value for metrics (separate from cumulative billing value).
+    type: number

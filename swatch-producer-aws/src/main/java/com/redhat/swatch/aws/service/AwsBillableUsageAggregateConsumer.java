@@ -43,6 +43,7 @@ import io.smallrye.reactive.messaging.annotations.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.Response;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -383,8 +384,17 @@ public class AwsBillableUsageAggregateConsumer {
       tags.addAll(List.of("error_code", usage.getErrorCode().toString()));
     }
 
+    // Use metricIncrement
+    // TODO: For rolling deployments do we need to fall back to total Value?
+    //  If we leave the fallback in, we will want to delete it in the future
+    BigDecimal valueToCount =
+        usage.getMetricIncrement() != null
+                && usage.getMetricIncrement().compareTo(BigDecimal.ZERO) > 0
+            ? usage.getMetricIncrement()
+            : usage.getTotalValue();
+
     double value =
-        usage.getTotalValue().doubleValue()
+        valueToCount.doubleValue()
             / getBillingFactor(
                 usage.getAggregateKey().getProductId(), usage.getAggregateKey().getMetricId());
     meterRegistry.counter(METERED_TOTAL_METRIC, tags.toArray(new String[0])).increment(value);

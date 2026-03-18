@@ -92,14 +92,12 @@ public class SwatchService extends RestService {
     String[] lines = metricsResponse.split("\\n");
 
     for (String line : lines) {
-      // Check if line starts with metric name followed by '{'
       if (line.startsWith(metricName)) {
-        // Check if all tags are present in the line
         boolean allTagsPresent = Stream.of(tags).allMatch(line::contains);
 
         if (allTagsPresent) {
-          // Extract the metric value (the number after } and before #)
-          Pattern pattern = Pattern.compile("\\}\\s+([0-9]+\\.?[0-9]*)\\s+#");
+          // Supports both Prometheus text format (value at EOL) and OpenMetrics (value before #)
+          Pattern pattern = Pattern.compile("\\}\\s+([0-9]+\\.?[0-9]*)");
           Matcher matcher = pattern.matcher(line);
 
           if (matcher.find()) {

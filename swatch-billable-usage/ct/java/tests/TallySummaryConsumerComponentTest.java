@@ -57,6 +57,7 @@ import org.candlepin.subscriptions.billable.usage.BillableUsageAggregateKey;
 import org.candlepin.subscriptions.billable.usage.TallySnapshot;
 import org.candlepin.subscriptions.billable.usage.TallySummary;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 public class TallySummaryConsumerComponentTest extends BaseBillableUsageComponentTest {
@@ -520,6 +521,124 @@ public class TallySummaryConsumerComponentTest extends BaseBillableUsageComponen
         snapshotDateCurrentMonth.format(DateTimeFormatter.ofPattern("yyyy-MM"));
     thenRemittancesSpanExpectedMonths(
         billableUsages, expectedPeriodLastMonth, expectedPeriodCurrentMonth);
+  }
+
+  /**
+   * Reproduces the double-counting bug in swatch_billable_usage_total. When a remittance is marked
+   * FAILED and a new tally arrives, getTotalRemitted() excludes the FAILED remittance, causing the
+   * full cumulative amount to be counted again instead of just the delta.
+   *
+   * <p>Scenario (billingFactor=1.0 via RHEL addon):
+   *
+   * <ul>
+   *   <li>Event 1: value=100, currentTotal=100 -> remittance=100, metric +100
+   *   <li>Remittance marked FAILED
+   *   <li>Event 2: value=20, currentTotal=120 -> getTotalRemitted()=0 (FAILED excluded),
+   *       billableValue=120, metric +120
+   *   <li>BUG: total metric = 220 (should be 120)
+   * </ul>
+   */
+  @Test
+  @Tag("unhappy")
+  public void testBillableUsageMetricDoubleCountsOnFailedRetry() {
+    givenNoContractCoverageForRhelAddon();
+    String billingAccountId = RandomUtils.generateRandom();
+    String metricName = "swatch_billable_usage_total";
+
+    // Capture initial metric value (counters accumulate across tests)
+    double initialMetric =
+        service.getMetricByTags(
+            metricName, "product=\"" + RHEL_PAYG_ADDON.getName() + "\"", "status=\"pending\"");
+
+    // Event 1: value=100, currentTotal=100
+    TallySummary tally1 =
+        createTallySummary(
+            orgId,
+            RHEL_PAYG_ADDON.getName(),
+            VCPUS.toString(),
+            100.0,
+            BillingProvider.AWS,
+            billingAccountId);
+    kafkaBridge.produceKafkaMessage(TALLY, tally1);
+
+    List<BillableUsage> usages1 =
+        kafkaBridge.waitForKafkaMessage(
+            BILLABLE_USAGE,
+            MessageValidators.billableUsageMatchesWithValue(
+                orgId, RHEL_PAYG_ADDON.getName(), 100.0),
+            1);
+    assertEquals(1, usages1.size(), "Expected exactly 1 billable usage for event 1");
+    BillableUsage usage1 = usages1.get(0);
+    waitForRemittanceStatus(usage1.getTallyId().toString(), RemittanceStatus.PENDING);
+
+    // Verify metric incremented by 100
+    Awaitility.await()
+        .atMost(Duration.ofSeconds(30))
+        .pollInterval(Duration.ofSeconds(2))
+        .untilAsserted(
+            () -> {
+              double current =
+                  service.getMetricByTags(
+                      metricName,
+                      "product=\"" + RHEL_PAYG_ADDON.getName() + "\"",
+                      "status=\"pending\"");
+              assertEquals(
+                  100.0,
+                  current - initialMetric,
+                  0.001,
+                  "Metric should have incremented by 100 after event 1");
+            });
+
+    // Mark remittance as FAILED via status consumer (simulating producer failure)
+    BillableUsageAggregate statusUpdate =
+        givenBillableUsageAggregate(
+            orgId,
+            RHEL_PAYG_ADDON.getName(),
+            VCPUS.toString(),
+            billingAccountId,
+            BillableUsage.Status.FAILED,
+            BillableUsage.ErrorCode.SUBSCRIPTION_NOT_FOUND,
+            null,
+            List.of(usage1.getUuid().toString()));
+    kafkaBridge.produceKafkaMessage(BILLABLE_USAGE_STATUS, statusUpdate);
+    waitForRemittanceStatus(usage1.getTallyId().toString(), RemittanceStatus.FAILED);
+
+    // Event 2: value=20, currentTotal=120 (incremental 20, cumulative 120)
+    TallySummary tally2 =
+        createTallySummary(
+            orgId,
+            RHEL_PAYG_ADDON.getName(),
+            VCPUS.toString(),
+            20.0,
+            120.0,
+            BillingProvider.AWS,
+            billingAccountId);
+    kafkaBridge.produceKafkaMessage(TALLY, tally2);
+
+    // Wait for event 2's billable usage (value=120 due to the bug: full cumulative billed)
+    kafkaBridge.waitForKafkaMessage(
+        BILLABLE_USAGE,
+        MessageValidators.billableUsageMatchesWithValue(orgId, RHEL_PAYG_ADDON.getName(), 120.0),
+        1);
+
+    // With the fix, metric correctly counts 100 + 20 = 120 (not 100 + 120 = 220)
+    Awaitility.await()
+        .atMost(Duration.ofSeconds(30))
+        .pollInterval(Duration.ofSeconds(2))
+        .untilAsserted(
+            () -> {
+              double current =
+                  service.getMetricByTags(
+                      metricName,
+                      "product=\"" + RHEL_PAYG_ADDON.getName() + "\"",
+                      "status=\"pending\"");
+              double delta = current - initialMetric;
+              assertEquals(
+                  120.0,
+                  delta,
+                  0.001,
+                  "Metric delta should be 120 (100+20) with metricIncrement fix");
+            });
   }
 
   private void givenNoContractCoverageForRosa() {

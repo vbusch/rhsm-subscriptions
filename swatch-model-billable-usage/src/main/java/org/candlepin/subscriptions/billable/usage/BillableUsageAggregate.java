@@ -45,6 +45,7 @@ import lombok.extern.slf4j.Slf4j;
 public class BillableUsageAggregate {
 
   private BigDecimal totalValue = new BigDecimal(0);
+  private BigDecimal metricIncrement = new BigDecimal(0);
   private OffsetDateTime windowTimestamp;
   private UUID aggregateId;
   private BillableUsageAggregateKey aggregateKey;
@@ -72,14 +73,18 @@ public class BillableUsageAggregate {
     if (billableUsage.getUuid() != null) {
       remittanceUuids.add(billableUsage.getUuid().toString());
     }
+    if (billableUsage.getMetricIncrement() != null) {
+      metricIncrement = metricIncrement.add(BigDecimal.valueOf(billableUsage.getMetricIncrement()));
+    }
     totalValue = totalValue.add(BigDecimal.valueOf(billableUsage.getValue()));
     snapshotDates.add(billableUsage.getSnapshotDate());
     log.info(
-        "Adding billableUsage: {} to aggregate with aggregateId: {}, totalValue:{}, remittanceUuids:{} "
+        "Adding billableUsage: {} to aggregate with aggregateId: {}, totalValue:{}, metricIncrement:{}, remittanceUuids:{} "
             + "and windowTimestamp: {}",
         billableUsage,
         aggregateId,
         totalValue,
+        metricIncrement,
         remittanceUuids,
         windowTimestamp);
     return this;

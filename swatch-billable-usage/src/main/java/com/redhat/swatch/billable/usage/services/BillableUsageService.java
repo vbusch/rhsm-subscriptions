@@ -121,8 +121,10 @@ public class BillableUsageService {
     usage.setBillingFactor(usageCalc.getBillingFactor());
 
     if (usageCalc.getRemittedValue() > 0) {
+      double metricIncrement = getMetricIncrement(usage, usageCalc);
       createRemittance(usage, usageCalc, contractCoverage);
-      updateBillableUsageMeter(usage, usageCalc);
+      usage.setMetricIncrement(metricIncrement);
+      updateBillableUsageMeter(usage, metricIncrement);
     } else {
       log.debug("Nothing to remit. Remittance record will not be created.");
     }
@@ -174,6 +176,35 @@ public class BillableUsageService {
         .map(RemittanceSummaryProjection::getTotalRemittedPendingValue)
         .reduce(Double::sum)
         .orElse(0.0);
+  }
+
+  /**
+   * Calculate the incremental usage for metrics. This includes all remittances (including failures)
+   * to get the true delta.
+   */
+  protected double getMetricIncrement(BillableUsage usage, BillableUsageCalculation usageCalc) {
+    // Query all remittances (including failures) to find what we've already counted in metrics
+    var filter =
+        BillableUsageRemittanceFilter.builder()
+            .orgId(usage.getOrgId())
+            .billingAccountId(usage.getBillingAccountId())
+            .billingProvider(usage.getBillingProvider().value())
+            .accumulationPeriod(AccumulationPeriodFormatter.toMonthId(usage.getSnapshotDate()))
+            .metricId(MetricId.fromString(usage.getMetricId()).getValue())
+            .productId(usage.getProductId())
+            .sla(usage.getSla().value())
+            .usage(usage.getUsage().value())
+            .excludeFailures(false) // Include failures for metric calculation
+            .build();
+
+    double totalAlreadyCounted =
+        billableUsageRemittanceRepository.getRemittanceSummaries(filter).stream()
+            .map(RemittanceSummaryProjection::getTotalRemittedPendingValue)
+            .reduce(Double::sum)
+            .orElse(0.0);
+
+    // Calculate delta: current total remitted value - what we've already counted
+    return usageCalc.getRemittedValue() - totalAlreadyCounted;
   }
 
   /**
@@ -240,6 +271,7 @@ public class BillableUsageService {
     // Remitted value should be set to usages metric_value rather than billing_value
     newRemittance.setRemittedPendingValue(usageCalc.getRemittedValue());
     newRemittance.setRemittancePendingDate(usageCalc.getRemittanceDate());
+
     log.debug("Creating new remittance for update: {}", newRemittance);
     // using saveAndFlush to validate the entity against the database and raise constraints
     // exception before moving forward.
@@ -249,8 +281,10 @@ public class BillableUsageService {
     usage.setUuid(newRemittance.getUuid());
   }
 
-  private void updateBillableUsageMeter(BillableUsage usage, BillableUsageCalculation usageCalc) {
-    incrementMetric(BILLABLE_USAGE_METRIC, usage, usageCalc.getRemittedValue());
+  private void updateBillableUsageMeter(BillableUsage usage, double metricIncrement) {
+    if (metricIncrement > 0) {
+      incrementMetric(BILLABLE_USAGE_METRIC, usage, metricIncrement);
+    }
   }
 
   private void updateCoveredUsageMeter(BillableUsage usage, ContractCoverage contractCoverage) {
